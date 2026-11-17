@@ -18,8 +18,6 @@
 
     pnpm install
 
-测试只在本机保留，`test/` 不随仓库分发；维护者在本地用 `node --test` 运行。把仓库目录作为 `link:` 依赖装进 profile，改动在重新安装插件后生效。
-
 ### 首次使用
 
 在工作区根目录执行 `/project-init-workspace`，建立 `projects/` 与 `PROJECTS.md`；之后新项目用 `/project-init <slug>`，随时用 `/project-check` 校验、`/project-archive` 归档。
