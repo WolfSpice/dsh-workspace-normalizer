@@ -38,7 +38,7 @@
 
 ## 白名单位置与默认值
 
-1. 内置白名单只有 8 项：`PROJECTS.md`、`AGENTS.md`、`AGENTS.local.md`、`CLAUDE.md`、`projects`、`tools`、`.git`、`WORKFLOW.md`（最后一项仅兼容旧文件）。它们写在 [`core/root-policy.mjs`](core/root-policy.mjs)。
+1. 内置白名单有 9 项：`PROJECTS.md`、`AGENTS.md`、`AGENTS.local.md`、`CLAUDE.md`、`projects`、`tools`、`archive`、`.git`、`WORKFLOW.md`（最后一项仅兼容旧文件）。它们写在 [`core/root-policy.mjs`](core/root-policy.mjs)。
 2. 额外白名单是插件配置 `rootAllowlist`，位于 profile 的 `cordis.patch.yml`（`~/.dsh/profiles/<profile>/cordis.patch.yml`）中 `- id: workspace-guard` 的 `config` 下，或通过 Settings 的插件配置页修改。
 3. 仓库默认是空数组，不包含任何用户环境名；仓库的 `cordis.patch.yml` 不写 `rootAllowlist`。
 4. 配置示例：
@@ -52,13 +52,12 @@
         maxSummaryBytes: 4000
         legacyRootScan: true
         rootAllowlist:
-          - archive
-          - astrbot-qq
-          - ollama
+          - legacy-data
+          - scratch
           - .dsh
 ```
 
-`archive`、`astrbot-qq`、`ollama`、`.dsh` 不在内置集合中；需要时按上面的示例加入，否则它们会被当作根目录散落项。
+`legacy-data`、`scratch`、`.dsh` 这类不在内置集合中的名字需要显式加入，否则会被当作根目录散落项；`archive`、`projects`、`tools`、`AGENTS.md` 等是内置项，无需配置。
 
 ## 命令
 
@@ -134,7 +133,7 @@ CLI 启动时读取 `~/.dsh/workspace-guard/effective-config.json`（由插件�
 
 - 刚初始化时只有 `PROJECTS.md` 与空的 `projects/`；`archive/`、`artifacts/`、`scripts/` 等**用到才建**，不预建空目录。
 - 根目录只保留这些固定项。
-- 服务目录（如 `astrbot-qq/`、`ollama/`）不参与项目结构；如需长期保留在根目录，请加入 `rootAllowlist`。
+- 服务目录（运行中服务自己的数据目录）不参与项目结构；如需长期保留在根目录，请加入 `rootAllowlist`。
 
 初始化后 `PROJECTS.md` 的内容（没有项目时没有表格）：
 
