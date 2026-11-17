@@ -9,6 +9,8 @@
 - **必填校验**：`目标` 缺失、为空或仍是 `<...>` 占位即报告；`状态` 非法也报告；可选字段只解析不检查。
 - **摘要注入**：把活跃项目摘要作为运行时上下文注入每个 agent，最多 4000 字节。
 - **归档**：状态为 `done` 的项目移入 `archive/YYYY/`；独立 git 仓库整体移动，父仓库内的项目用 `git mv` 暂存重命名。
+- **根目录巡检**：模型请求结束后扫描根目录散落项，发现后重建索引并在「待处理」警告。
+- **AGENTS.md 维护**：按工作区创建或更新受管约束块（`manageAgentsFile`）。
 
 ## 不做什么
 
@@ -29,6 +31,10 @@
 | `maxSummaryBytes` | `4000` | 注入摘要的 UTF-8 字节上限（256–16384）。 |
 | `corePath` | `""` | 覆盖包内 core 路径；留空使用包内实现。 |
 | `indexFileName` | `"PROJECTS.md"` | 索引文件名。 |
+| `manageAgentsFile` | `true` | 按工作区维护 `AGENTS.md` 约定块；关闭后不创建、不更新。 |
+| `rootAllowlist` | `[]` | 根目录允许长期存在的额外文件/目录名（大小写不敏感），只影响散落判定，不参与项目扫描。 |
+
+`rootAllowlist` 用于「根目录里但暂时不便移动」的内容：命中的文件/目录不算散落项，不会进入索引警告，也不会触发 turn-stopping 重建；`projects/` 内的项目识别与扫描不受影响。条目会去空白、按大小写不敏感匹配。
 
 ## 命令
 
@@ -37,6 +43,7 @@
 | `/project-init` | `slug 目标...` | 创建项目目录与 README，重建索引。 |
 | `/project-check` | 无 | 只校验，不写文件；有问题时返回错误文本。 |
 | `/project-archive` | `slug` | 校验 `done` → 按 VCS 形态移动 → 重建索引；不提交、不推送。 |
+| `/project-init-workspace` | 无 | 在当前目录建立 `projects/` 与 `PROJECTS.md`，并维护 `AGENTS.md`。 |
 
 ## CLI（插件未安装时）
 
@@ -82,6 +89,7 @@ node bin/check-projects.mjs --root <工作区> [--json]
 ```text
 <工作区>/
 ├─ PROJECTS.md            # 由插件生成，不要手改
+├─ AGENTS.md              # 工作区约定，由插件维护标记块
 ├─ projects/              # 所有项目
 │  └─ YYYYMMDD-slug/      # 单个项目（用到才建）
 │     ├─ README.md        # 项目说明书，必填「目标」
@@ -98,7 +106,7 @@ node bin/check-projects.mjs --root <工作区> [--json]
 要点：
 
 - 刚初始化时只有 `PROJECTS.md` 与空的 `projects/`；`archive/`、`artifacts/`、`scripts/` 等**用到才建**，不预建空目录。
-- 根目录只允许这些固定项；存档、一次性备份、环境导出直接进 Windows 回收站，不落盘。
+- 根目录只保留这些固定项。
 - 服务目录（如 `astrbot-qq/`、`ollama/`）不参与这套结构，插件不扫描它们。
 
 初始化后 `PROJECTS.md` 的内容（没有项目时没有表格）：
@@ -129,9 +137,36 @@ projects/20261118-demo/
 
 索引随之出现「活跃项目（1）」表格；`目标` 缺失、为空或仍是 `<...>` 时进入「待处理」并标 `⚠`。
 
+## AGENTS.md 自动维护
+
+`manageAgentsFile`（默认 `true`）开启时，插件在首次解析到某个工作区根、以及执行 `/project-init-workspace` 时维护根目录的 `AGENTS.md`：
+
+- 没有 `AGENTS.md`：创建文件并写入受管约定块；
+- 有文件但没有标记：在末尾追加约定块，保留原有内容；
+- 已有 `<!-- workspace-guard:begin -->` / `<!-- workspace-guard:end -->`：原地替换标记块，块外原文不变；
+- 块内容完全一致时不写盘。
+
+约定块示例：
+
+```md
+<!-- workspace-guard:begin -->
+## 工作区约定（由 workspace-guard 维护，请勿手改本块）
+
+- 所有产出落在 `projects/<YYYYMMDD-slug>/` 下。
+- 工作区根目录由 `AGENTS.md`、`PROJECTS.md`、`projects/`、`tools/`、`archive/` 与服务目录组成。
+- 新文件放入对应项目的 `artifacts/`、`scripts/` 或 `tmp/`。
+<!-- workspace-guard:end -->
+```
+
+约定块使用肯定句与通用规则，不硬编码具体项目路径；不要手改标记块内内容，块外可以自由编辑。
+
 ## 已知盲区
 
-- 通过 bash 重定向、外部进程写入的文件不经过 `tools/result`，索引会滞后到下一次手工命令或写类工具命中。
+- 通过 bash 重定向、外部进程写入的文件不经过 `tools/result`；项目目录内的写入靠写类工具标记 dirty，根目录散落项在 `agent/turn-stopping` 后置扫描时发现。
 - README 解析只认半角冒号的 `- 字段: 值`；中文冒号只产生格式警告，不改变解析结果。
 - 索引与 README 允许滞后；`PROJECTS.md` 是派生值，状态以 README 为准。
 - 归档是显式命令，不做后台巡检；移动失败会回滚，但已提交的历史只能由人处理。
+
+## 与工作区约定的关系
+
+工作区约束由 `AGENTS.md` 的受管块承载（`manageAgentsFile` 维护），索引由 `PROJECTS.md` 派生；插件不依赖工作区里任何特定说明文件，也不需要额外保留编辑说明。

@@ -12,7 +12,7 @@ import { createGuard } from './lib/guard.mjs'
 /** Host 服务依赖；缺任意一个时插件应保持 inactive。 */
 export const inject = ['fs', 'sessions', 'workingDirectory', 'commands', 'systemPrompt', 'tools']
 
-/** 插件配置（与 WORKFLOW.md 第 11 节及开发文档 6.2 对齐）。 */
+/** 插件配置（与开发文档 6.2 对齐）。 */
 export const Config = z.object({
   enabled: z.boolean().default(true)
     .description('总开关；关闭后不监听事件、不注册命令。'),
@@ -26,6 +26,10 @@ export const Config = z.object({
     .description('可选：覆盖包内 core 的路径（调试或本地补丁用）；留空表示用包内实现。'),
   indexFileName: z.string().default('PROJECTS.md')
     .description('索引文件名。'),
+  manageAgentsFile: z.boolean().default(true)
+    .description('按工作区维护 AGENTS.md 中的工作区约定块；关闭后不创建、不更新。'),
+  rootAllowlist: z.array(z.string()).default([])
+    .description('根目录允许长期存在的额外文件/目录名（大小写不敏感），用于放置不便移动的内容；不参与项目扫描。'),
 })
 
 /**

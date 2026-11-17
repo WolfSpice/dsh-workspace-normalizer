@@ -2,12 +2,14 @@
  * workspace-guard 核心模块：规范工作区规则的唯一实现。
  * 规则层（parse/validate/render/classify）为纯函数；适配层（scan/create/write/archive/probe）
  * 使用 node:fs/promises 与 node:child_process，所有写入限制在 root 内并采用「临时文件 + rename」。
- * 契约见 WORKFLOW.md 第 11 节与 workspace-guard-plugin-dev.md 第 5 节；冲突时以 WORKFLOW.md 为准。
+ * 契约见 workspace-guard-plugin-dev.md 第 2 节不变量与第 5 节。
  */
 
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+
+import { isRootAllowed, normalizeRootAllowlist } from './root-policy.mjs'
 
 /** 包内 core 模块的绝对 file: URL。 */
 export const CORE_MODULE_URL = import.meta.url
@@ -27,8 +29,9 @@ const FIELD_MAP = new Map([
   ['入口', 'entries'],
   ['回滚', 'rollback'],
 ])
-const ALLOWED_ROOT_FILES = new Set(['WORKFLOW.md', 'PROJECTS.md'])
-const KNOWN_ROOT_DIRS = new Set(['projects', 'archive', 'tools', 'astrbot-qq', 'ollama'])
+/** 根目录白名单策略见 core/root-policy.mjs；点开头条目另行忽略。 */
+const AGENTS_BEGIN = '<!-- workspace-guard:begin -->'
+const AGENTS_END = '<!-- workspace-guard:end -->'
 
 /** 所有错误码：Issue 闭集 + 适配层操作错误。 */
 export const ERROR_CODES = Object.freeze([
@@ -100,7 +103,7 @@ export function parseReadme(text) {
   return { fields, issues }
 }
 
-/** 按 WORKFLOW.md 4.1 校验：必填只有 `目标`；状态缺失显示 unknown，非法报 STATUS_INVALID。 */
+/** 按工作区约定校验：必填只有 `目标`；状态缺失显示 unknown，非法报 STATUS_INVALID。 */
 export function validateProject(record) {
   const issues = []
   const fields = record?.fields ?? {}
@@ -171,20 +174,14 @@ export function renderProjectsIndex(result) {
   const ordered = projects.slice().sort(compareProjects)
   const tableProjects = ordered.filter((record) => !parseFailed(record))
   const pending = []
-  for (const record of ordered) {
-    for (const issue of record.issues ?? []) {
-      pending.push({ path: projectDisplayPath(root, record), message: issue.message })
-    }
-  }
+  for (const record of ordered) for (const issue of record.issues ?? []) pending.push({ path: projectDisplayPath(root, record), message: issue.message })
   for (const warning of warnings) {
     pending.push({ path: warning.path === undefined ? '' : toPosix(warning.path), message: warning.message })
   }
   const blocks = ['# 项目索引', '', '> 由 bin/workspace-index.mjs 生成，不要手改。', '']
   if (pending.length > 0) {
     blocks.push(`## 待处理（${pending.length}）`, '')
-    for (const item of pending) {
-      blocks.push(item.path === '' ? `- ${item.message}` : `- \`${item.path}\` — ${item.message}`)
-    }
+    for (const item of pending) blocks.push(item.path === '' ? `- ${item.message}` : `- \`${item.path}\` — ${item.message}`)
     blocks.push('')
   }
   if (tableProjects.length === 0) {
@@ -240,9 +237,7 @@ export function renderSummary(projects, maxBytes) {
   if (counts.paused > 0) countParts.push(`paused ${counts.paused}`)
   if (counts.unknown > 0) countParts.push(`unknown ${counts.unknown}`)
   const statLine = active.length === 0 ? '活跃项目 0 个。' : `活跃项目 ${active.length} 个（${countParts.join(' / ')}）：`
-  const itemLines = active.map(
-    (record) => `- ${record.slug} [${displayStatus(record)}] ${summaryGoal(record)}`,
-  )
+  const itemLines = active.map((record) => `- ${record.slug} [${displayStatus(record)}] ${summaryGoal(record)}`)
   const issueParts = []
   for (const record of list) {
     const rel = typeof record.relPath === 'string' && record.relPath !== ''
@@ -251,17 +246,14 @@ export function renderSummary(projects, maxBytes) {
     for (const issue of record.issues ?? []) issueParts.push(`\`${rel}\` ${issue.message}`)
   }
   const issueLine = issueParts.length === 0 ? '' : `需要补全：${issueParts.join('；')}`
-  const header = '## 规范工作区（自动注入）'
-  const footer = '规则见 WORKFLOW.md；索引见 PROJECTS.md。'
+  const header = '## 规范工作区（自动注入）', footer = '规则见 AGENTS.md；索引见 PROJECTS.md。'
   const assemble = (kept, options = {}) => {
     const withFooter = options.withFooter !== false
     const lines = [header, '']
     if (options.withStat !== false) lines.push(statLine)
     lines.push(...itemLines.slice(0, kept))
     const omitted = itemLines.length - kept
-    if (omitted > 0) {
-      lines.push(kept > 0 ? `- 还有 ${omitted} 个未列出` : `还有 ${omitted} 个未列出`)
-    }
+    if (omitted > 0) lines.push(kept > 0 ? `- 还有 ${omitted} 个未列出` : `还有 ${omitted} 个未列出`)
     if (issueLine !== '') lines.push('', issueLine)
     else if (withFooter) lines.push('')
     if (withFooter) lines.push(footer)
@@ -285,24 +277,17 @@ export function renderSummary(projects, maxBytes) {
 }
 
 /** 归类绝对路径：projects / legacy-root / tools / root-file / ignored（纯字符串判断）。 */
-export function classifyPath(root, absPath) {
+export function classifyPath(root, absPath, rootAllowlist) {
   const rel = path.relative(path.resolve(String(root ?? '')), path.resolve(String(absPath ?? '')))
-  if (rel === '') return { kind: 'ignored' }
-  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return { kind: 'ignored' }
+  if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return { kind: 'ignored' }
   const parts = rel.split(/[\\/]+/).filter(Boolean)
   const first = parts[0]
   if (first === undefined) return { kind: 'ignored' }
   if (first === 'projects') return { kind: 'projects' }
   if (first === 'tools') return { kind: 'tools' }
-  if (first === 'archive' || KNOWN_ROOT_DIRS.has(first) && first !== 'projects' && first !== 'tools' && first !== 'archive') return { kind: 'ignored' }
-  if (first.startsWith('.')) return { kind: 'ignored' }
-  if (parts.length === 1) {
-    if (ALLOWED_ROOT_FILES.has(first)) return { kind: 'ignored' }
-    if (LEGACY_SLUG_RE.test(first)) return { kind: 'legacy-root' }
-    return { kind: 'root-file' }
-  }
-  if (LEGACY_SLUG_RE.test(first)) return { kind: 'legacy-root' }
-  return { kind: 'ignored' }
+  if (first.startsWith('.') || isRootAllowed(first, rootAllowlist)) return { kind: 'ignored' }
+  if (parts.length === 1) return LEGACY_SLUG_RE.test(first) ? { kind: 'legacy-root' } : { kind: 'root-file' }
+  return LEGACY_SLUG_RE.test(first) ? { kind: 'legacy-root' } : { kind: 'ignored' }
 }
 
 /* ------------------------------ 路径与文件工具 ---------------------------- */
@@ -498,6 +483,7 @@ async function loadProject(root, dir, meta) {
 /** 扫描工作区（不写文件）：projects/ + 过渡期根目录 YYYYMMDD-*；根目录散落项进 warnings。 */
 export async function scanWorkspace(root, opts = {}) {
   const rootReal = await existingRoot(root)
+  const allow = normalizeRootAllowlist(opts.rootAllowlist)
   const warnings = []
   const projects = []
   const seen = new Set()
@@ -506,18 +492,9 @@ export async function scanWorkspace(root, opts = {}) {
     for (const entry of await fs.readdir(projectsDir, { withFileTypes: true })) {
       if (entry.name.startsWith('.')) continue
       const relPath = `projects/${entry.name}`
-      if (entry.isSymbolicLink()) {
-        warnings.push(makeIssue('ROOT_FILE', 'warning', `projects/ 下的符号链接「${entry.name}」已跳过`, { path: relPath }))
-        continue
-      }
-      if (!entry.isDirectory()) {
-        warnings.push(makeIssue('ROOT_FILE', 'warning', `projects/ 下存在非目录条目「${entry.name}」`, { path: relPath }))
-        continue
-      }
-      if (!PROJECT_SLUG_RE.test(entry.name)) {
-        warnings.push(makeIssue('SLUG_INVALID', 'warning', `目录名「${entry.name}」不符合 YYYYMMDD-slug，已跳过`, { path: relPath }))
-        continue
-      }
+      if (entry.isSymbolicLink()) { warnings.push(makeIssue('ROOT_FILE', 'warning', `projects/ 下的符号链接「${entry.name}」已跳过`, { path: relPath })); continue }
+      if (!entry.isDirectory()) { warnings.push(makeIssue('ROOT_FILE', 'warning', `projects/ 下存在非目录条目「${entry.name}」`, { path: relPath })); continue }
+      if (!PROJECT_SLUG_RE.test(entry.name)) { warnings.push(makeIssue('SLUG_INVALID', 'warning', `目录名「${entry.name}」不符合 YYYYMMDD-slug，已跳过`, { path: relPath })); continue }
       seen.add(entry.name)
       projects.push(await loadProject(rootReal, path.join(projectsDir, entry.name), { legacyRoot: false, relPath }))
     }
@@ -526,10 +503,7 @@ export async function scanWorkspace(root, opts = {}) {
   if (opts.legacyRootScan !== false) {
     for (const entry of rootEntries) {
       if (entry.name.startsWith('.') || !entry.isDirectory() || !LEGACY_SLUG_RE.test(entry.name)) continue
-      if (seen.has(entry.name)) {
-        warnings.push(makeIssue('SLUG_INVALID', 'warning', `根目录与 projects/ 存在同名项目「${entry.name}」，以 projects/ 为准`, { path: entry.name }))
-        continue
-      }
+      if (seen.has(entry.name)) { warnings.push(makeIssue('SLUG_INVALID', 'warning', `根目录与 projects/ 存在同名项目「${entry.name}」，以 projects/ 为准`, { path: entry.name })); continue }
       seen.add(entry.name)
       projects.push(await loadProject(rootReal, path.join(rootReal, entry.name), { legacyRoot: true, relPath: entry.name }))
     }
@@ -537,9 +511,9 @@ export async function scanWorkspace(root, opts = {}) {
   for (const entry of rootEntries) {
     if (entry.name.startsWith('.')) continue
     if (entry.isDirectory()) {
-      if (KNOWN_ROOT_DIRS.has(entry.name) || LEGACY_SLUG_RE.test(entry.name)) continue
+      if (isRootAllowed(entry.name, allow) || LEGACY_SLUG_RE.test(entry.name)) continue
       warnings.push(makeIssue('ROOT_FILE', 'warning', `根目录存在未归类目录「${entry.name}」`, { path: entry.name }))
-    } else if (entry.isFile() && !ALLOWED_ROOT_FILES.has(entry.name)) {
+    } else if (entry.isFile() && !isRootAllowed(entry.name, allow)) {
       warnings.push(makeIssue('ROOT_FILE', 'warning', `根目录存在散落文件「${entry.name}」`, { path: entry.name }))
     }
   }
@@ -547,9 +521,22 @@ export async function scanWorkspace(root, opts = {}) {
   return { root: rootReal, projects, warnings }
 }
 
+/** 列出根目录白名单之外的散落项（只读一层；点开头条目忽略）。 */
+export async function listRootStrays(root, opts = {}) {
+  const rootReal = await existingRoot(root)
+  const allow = normalizeRootAllowlist(opts.rootAllowlist)
+  const strays = []
+  for (const entry of await fs.readdir(rootReal, { withFileTypes: true })) {
+    if (isRootAllowed(entry.name, allow) || entry.name.startsWith('.')) continue
+    let type = entry.isDirectory() ? 'directory' : 'file'
+    if (entry.isSymbolicLink()) type = (await isDirectory(path.join(rootReal, entry.name))) ? 'directory' : 'file'
+    strays.push({ name: entry.name, type })
+  }
+  return strays.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+
 /* ------------------------------ 适配层：创建与写索引 ---------------------- */
 
-/** 创建项目目录与 README 骨架；失败清理本次创建的目录，不覆盖已存在项目。 */
 /** 生成附录 A 的项目 README 模板；`目标` 保留 `<...>` 占位。 */
 export function renderReadmeSkeleton(slug) {
   return [
@@ -656,6 +643,50 @@ export async function initWorkspace(root) {
     created.push('PROJECTS.md')
   }
   return { root: rootReal, created }
+}
+
+/** 工作区约定块：AGENTS.md 中由插件维护的标记区。 */
+export function renderAgentsSection() {
+  return [
+    AGENTS_BEGIN,
+    '## 工作区约定（由 workspace-guard 维护，请勿手改本块）',
+    '',
+    '- 所有产出落在 `projects/<YYYYMMDD-slug>/` 下。',
+    '- 工作区根目录由 `AGENTS.md`、`PROJECTS.md`、`projects/`、`tools/`、`archive/` 与服务目录组成。',
+    '- 新文件放入对应项目的 `artifacts/`、`scripts/` 或 `tmp/`。',
+    AGENTS_END,
+  ].join('\n')
+}
+
+/**
+ * 确保 AGENTS.md 含受管约束块：无文件创建、无标记追加、有标记原地替换。
+ * 保留标记块外原文；原子写，目标必须在 root 内。
+ * @param {string} root
+ * @returns {Promise<{path: string, action: 'created'|'appended'|'updated'|'unchanged'}>}
+ */
+export async function ensureAgentsSection(root) {
+  const rootReal = await existingRoot(root)
+  const target = path.join(rootReal, 'AGENTS.md')
+  await assertInsideRoot(rootReal, target)
+  let text = ''
+  try { text = await fs.readFile(target, 'utf8') } catch (err) {
+    if (err.code !== 'ENOENT') throw new WorkspaceError('WORKSPACE_WRITE_FAILED', `读取 AGENTS.md 失败：${err.message}`, { cause: err })
+  }
+  const section = renderAgentsSection()
+  const begin = text.indexOf(AGENTS_BEGIN)
+  const end = begin >= 0 ? text.indexOf(AGENTS_END, begin) : -1
+  let next
+  let action
+  if (begin >= 0) {
+    next = text.slice(0, begin) + section + (end >= 0 ? text.slice(end + AGENTS_END.length) : '')
+    action = 'updated'
+  } else {
+    next = `${text === '' ? '' : `${text.replace(/\n*$/, '')}\n\n`}${section}\n`
+    action = text === '' ? 'created' : 'appended'
+  }
+  if (next === text) return { path: target, action: 'unchanged' }
+  await writeFileAtomic(target, next, { rootReal })
+  return { path: target, action }
 }
 
 /* ------------------------------ 适配层：git 与归档 ------------------------ */
