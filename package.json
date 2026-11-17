@@ -1,0 +1,39 @@
+{
+  "name": "dsh-workspace-normalizer",
+  "version": "0.1.0",
+  "description": "校验项目 README、重建项目索引并归档已完成项目，让工作区结构始终可检查。",
+  "icon": "./icon.svg",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ws-new-project": "./bin/new-project.mjs",
+    "ws-index": "./bin/workspace-index.mjs",
+    "ws-check": "./bin/check-projects.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./core": "./core/workspace-core.mjs",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "core",
+    "lib",
+    "bin",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.19.0"
+  }
+}

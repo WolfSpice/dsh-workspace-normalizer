@@ -1,0 +1,7 @@
+- insert:
+    - id: workspace-guard
+      name: 'dsh-workspace-normalizer'
+      config:
+        autoCreateReadme: false
+        maxSummaryBytes: 4000
+        legacyRootScan: false

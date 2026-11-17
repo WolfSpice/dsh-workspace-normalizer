@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workspace guard",
+    "description": "Validate project READMEs, rebuild the project index, and archive finished work."
+  }
+}
