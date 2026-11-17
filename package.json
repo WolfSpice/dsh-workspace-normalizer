@@ -3,18 +3,22 @@
   "version": "0.1.0",
   "description": "校验项目 README、重建项目索引并归档已完成项目，让工作区结构始终可检查。",
   "icon": "./icon.svg",
-  "private": true,
   "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./core": "./core/workspace-core.mjs",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "ws-new-project": "./bin/new-project.mjs",
     "ws-index": "./bin/workspace-index.mjs",
     "ws-check": "./bin/check-projects.mjs"
   },
-  "exports": {
-    ".": "./index.js",
-    "./core": "./core/workspace-core.mjs",
-    "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
   },
   "files": [
     "index.js",
@@ -22,8 +26,10 @@
     "lib",
     "bin",
     "cordis.patch.yml",
-    "locale/*.json",
-    "icon.svg"
+    "locale",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test"
@@ -31,9 +37,36 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "runtime": ">=0.2.0-rc.1 <0.3.0-0"
     }
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.19.0"
-  }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "dsh",
+    "dsh-plugin",
+    "workspace",
+    "project-index",
+    "project-management",
+    "archive",
+    "agent",
+    "中文",
+    "工作区",
+    "项目管理"
+  ],
+  "author": "WolfSpice",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WolfSpice/dsh-workspace-normalizer.git"
+  },
+  "homepage": "https://github.com/WolfSpice/dsh-workspace-normalizer#readme",
+  "bugs": {
+    "url": "https://github.com/WolfSpice/dsh-workspace-normalizer/issues"
+  },
+  "license": "MIT"
 }

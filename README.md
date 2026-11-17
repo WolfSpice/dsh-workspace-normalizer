@@ -2,6 +2,37 @@
 
 把目录规范插件：让「项目有 README、索引不过期、done 项目能归档」不再依赖人的自觉。
 
+## 安装
+
+面向 DSH 0.2.x，兼容范围写在 `package.json` 的 `dsh.compatibility.runtime`（`>=0.2.0-rc.1 <0.3.0-0`）。
+
+### 从 npm 安装
+
+在 DSH 的插件管理里安装，安装目标填包名：
+
+    dsh-workspace-normalizer
+
+插件以 `workspace-guard` 这个 id 出现在插件列表里；默认配置不写任何 `rootAllowlist`，安装完不会假设你的根目录长什么样。
+
+### 本地开发
+
+    pnpm install
+    pnpm test
+
+把仓库目录作为 `link:` 依赖装进 profile，改动在重新安装插件后生效。
+
+### 首次使用
+
+在工作区根目录执行 `/project-init-workspace`，建立 `projects/` 与 `PROJECTS.md`；之后新项目用 `/project-init <slug>`，随时用 `/project-check` 校验、`/project-archive` 归档。
+
+### 配置
+
+写在 profile 的 `cordis.patch.yml` 里（`~/.dsh/profiles/<profile>/cordis.patch.yml`），也可以在设置页的插件配置里改。字段见下文「配置项」。
+
+### 命令行
+
+包内附带三个 CLI，可选择全局安装或 `npx` 调用：`ws-new-project`、`ws-index`、`ws-check`。
+
 ## 做什么
 
 - **新建项目**：按模板创建 `projects/YYYYMMDD-slug/` 与 README 骨架。
