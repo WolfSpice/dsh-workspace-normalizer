@@ -17,9 +17,8 @@
 ### 本地开发
 
     pnpm install
-    pnpm test
 
-把仓库目录作为 `link:` 依赖装进 profile，改动在重新安装插件后生效。
+测试只在本机保留，`test/` 不随仓库分发；维护者在本地用 `node --test` 运行。把仓库目录作为 `link:` 依赖装进 profile，改动在重新安装插件后生效。
 
 ### 首次使用
 

@@ -19,3 +19,9 @@ Thumbs.db
 # 本地环境
 .env
 .env.local
+
+# npm 凭据只放用户级 ~/.npmrc 或环境变量 NPM_TOKEN，
+# 仓库里的 .npmrc 只承载 registry、engine-strict 等可公开配置。
+
+# 测试只在本机运行，不随仓库分发
+test/
