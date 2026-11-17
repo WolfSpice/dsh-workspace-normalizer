@@ -177,7 +177,7 @@ projects/20261118-demo/
 
 ```md
 <!-- workspace-guard:begin -->
-## 工作区约定（由 workspace-guard 维护，请勿手改本块）
+## 工作区约定（由 dsh-workspace-normalizer 维护，请勿手改本块）
 
 - 所有产出落在 `projects/<YYYYMMDD-slug>/` 下。
 - 工作区根目录由 `AGENTS.md`、`PROJECTS.md`、`projects/`、`tools/`、`archive/` 与服务目录组成。
