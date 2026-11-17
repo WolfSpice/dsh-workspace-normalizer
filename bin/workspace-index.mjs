@@ -4,19 +4,24 @@
  * 默认扫描并重建 PROJECTS.md（退出 0）；--check 只校验不写（退出 0/1）。
  */
 
+import fs from 'node:fs/promises'
+import path from 'node:path'
+
 import {
   renderProjectsIndex,
   scanWorkspace,
   writeIndex,
   WorkspaceError,
 } from '../core/workspace-core.mjs'
+import { readEffectiveConfig } from '../core/effective-config.mjs'
 
-const USAGE = `用法：node bin/workspace-index.mjs --root <dir> [--check] [--json]
+const USAGE = `用法：node bin/workspace-index.mjs --root <dir> [--check] [--json] [--config-dir <dir>]
 
-  --root <dir>   工作区根目录（必须）
-  --check        只校验，不写 PROJECTS.md；有 error 时退出 1
-  --json         以 JSON 输出结果
-  -h, --help     显示帮助`
+  --root <dir>        工作区根目录（必须）
+  --check             只校验，不写 PROJECTS.md；有 error 时退出 1
+  --json              以 JSON 输出结果
+  --config-dir <dir>  生效配置目录，默认 ~/.dsh/workspace-guard
+  -h, --help          显示帮助`
 
 class UsageError extends Error {}
 
@@ -39,10 +44,11 @@ function parseArgs(argv) {
       options[key] = true
       continue
     }
-    if (key !== 'root') throw new UsageError(`未知参数：--${key}`)
+    if (key !== 'root' && key !== 'config-dir') throw new UsageError(`未知参数：--${key}`)
     const value = equal >= 0 ? token.slice(equal + 1) : argv[++index]
-    if (value === undefined || value === '') throw new UsageError('参数 --root 缺少值')
-    options.root = value
+    if (value === undefined || value === '') throw new UsageError(`参数 --${key} 缺少值`)
+    if (key === 'root') options.root = value
+    else options.configDir = value
   }
   return options
 }
@@ -90,7 +96,11 @@ async function main() {
     return
   }
 
-  const result = await scanWorkspace(options.root)
+  const config = await readEffectiveConfig({ dataDir: options.configDir })
+  const result = await scanWorkspace(options.root, {
+    legacyRootScan: config.legacyRootScan,
+    rootAllowlist: config.rootAllowlist,
+  })
   const issues = collectIssues(result)
   const errorCount = issues.filter((issue) => issue.severity === 'error').length
   const warningCount = issues.length - errorCount
@@ -100,6 +110,15 @@ async function main() {
   if (!checkOnly) {
     const text = renderProjectsIndex(result)
     written = await writeIndex(options.root, text)
+    if (config.indexFileName !== 'PROJECTS.md') {
+      const target = path.join(path.dirname(written.path), config.indexFileName)
+      try {
+        await fs.rename(written.path, target)
+        written = { path: target, bytes: written.bytes }
+      } catch (err) {
+        console.error(`警告：索引已写入 PROJECTS.md，但改名为 ${config.indexFileName} 失败：${err.message}`)
+      }
+    }
   }
 
   if (options.json === true) {

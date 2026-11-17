@@ -32,7 +32,7 @@
 | `corePath` | `""` | 覆盖包内 core 路径；留空使用包内实现。 |
 | `indexFileName` | `"PROJECTS.md"` | 索引文件名。 |
 | `manageAgentsFile` | `true` | 按工作区维护 `AGENTS.md` 约定块；关闭后不创建、不更新。 |
-| `rootAllowlist` | `[]` | 根目录允许长期存在的额外文件/目录名（大小写敏感），只影响散落判定，不参与项目扫描。 |
+| `rootAllowlist` | `[]` | 根目录允许长期存在的额外文件/目录名（大小写敏感），只影响散落判定，不参与项目扫描；CLI 通过生效配置读取。 |
 
 `rootAllowlist` 用于「根目录里但暂时不便移动」的内容：命中的文件/目录不算散落项，不会进入索引警告，也不会触发 turn-stopping 重建；`projects/` 内的项目识别与扫描不受影响。条目会去空白、按大小写敏感精确匹配。
 
@@ -81,12 +81,15 @@ node bin/check-projects.mjs --root <工作区> [--json]
 
 `workspace-index.mjs --check` 与 `check-projects.mjs` 只校验不写，退出码 0/1；`new-project.mjs` 参数错误退出 2。
 
+CLI 启动时读取 `~/.dsh/workspace-guard/effective-config.json`（由插件写入，含 `rootAllowlist`、`indexFileName`、`legacyRootScan` 等），因此与插件行为一致；没有该文件时使用默认值。用 `--config-dir <dir>` 指定其他数据目录。
+
 ## 数据目录
 
 ```text
 ~/.dsh/workspace-guard/
-├─ state.json     # dirty / lastBuildAt / lastError，按工作区根分区，原子写
-└─ logs/          # 按天追加，单条 ≤ 2 KiB
+├─ state.json              # dirty / lastBuildAt / lastError，按工作区根分区，原子写
+├─ effective-config.json   # 插件写入的生效配置，CLI 读取
+└─ logs/                   # 按天追加，单条 ≤ 2 KiB
 ```
 
 工作区内只写 `PROJECTS.md` 与项目 README，不写 `.dsh/`。

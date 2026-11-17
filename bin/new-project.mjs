@@ -5,13 +5,15 @@
  */
 
 import { createProject, WorkspaceError } from '../core/workspace-core.mjs'
+import { readEffectiveConfig } from '../core/effective-config.mjs'
 
-const USAGE = `用法：node bin/new-project.mjs --root <dir> --slug <slug> --goal <text> [--date YYYYMMDD]
+const USAGE = `用法：node bin/new-project.mjs --root <dir> --slug <slug> --goal <text> [--date YYYYMMDD] [--config-dir <dir>]
 
   --root <dir>        工作区根目录（必须）
   --slug <slug>       项目 slug；也可直接传完整 YYYYMMDD-slug
   --goal <text>       项目目标（必填，不能是 <...> 占位）
   --date YYYYMMDD     创建日期，默认今天
+  --config-dir <dir>  生效配置目录，默认 ~/.dsh/workspace-guard
   -h, --help          显示帮助`
 
 class UsageError extends Error {}
@@ -32,10 +34,11 @@ function parseArgs(argv) {
     const key = equal >= 0 ? token.slice(2, equal) : token.slice(2)
     const value = equal >= 0 ? token.slice(equal + 1) : argv[++index]
     if (value === undefined || value === '') throw new UsageError(`参数 --${key} 缺少值`)
-    if (!['root', 'slug', 'goal', 'date'].includes(key)) {
+    if (!['root', 'slug', 'goal', 'date', 'config-dir'].includes(key)) {
       throw new UsageError(`未知参数：--${key}`)
     }
-    options[key] = value
+    if (key === 'config-dir') options.configDir = value
+    else options[key] = value
   }
   return options
 }
@@ -67,6 +70,8 @@ async function main() {
     }
   }
 
+  // 读取生效配置，保证与插件使用同一入口；创建项目本身不依赖扫描配置。
+  await readEffectiveConfig({ dataDir: options.configDir })
   const record = await createProject(options.root, {
     slug: options.slug,
     goal: options.goal,

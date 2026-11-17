@@ -5,12 +5,14 @@
  */
 
 import { scanWorkspace, WorkspaceError } from '../core/workspace-core.mjs'
+import { readEffectiveConfig } from '../core/effective-config.mjs'
 
-const USAGE = `用法：node bin/check-projects.mjs --root <dir> [--json]
+const USAGE = `用法：node bin/check-projects.mjs --root <dir> [--json] [--config-dir <dir>]
 
-  --root <dir>   工作区根目录（必须）
-  --json         以 JSON 输出结果
-  -h, --help     显示帮助`
+  --root <dir>        工作区根目录（必须）
+  --json              以 JSON 输出结果
+  --config-dir <dir>  生效配置目录，默认 ~/.dsh/workspace-guard
+  -h, --help          显示帮助`
 
 class UsageError extends Error {}
 
@@ -33,10 +35,11 @@ function parseArgs(argv) {
       options[key] = true
       continue
     }
-    if (key !== 'root') throw new UsageError(`未知参数：--${key}`)
+    if (key !== 'root' && key !== 'config-dir') throw new UsageError(`未知参数：--${key}`)
     const value = equal >= 0 ? token.slice(equal + 1) : argv[++index]
-    if (value === undefined || value === '') throw new UsageError('参数 --root 缺少值')
-    options.root = value
+    if (value === undefined || value === '') throw new UsageError(`参数 --${key} 缺少值`)
+    if (key === 'root') options.root = value
+    else options.configDir = value
   }
   return options
 }
@@ -84,7 +87,11 @@ async function main() {
     return
   }
 
-  const result = await scanWorkspace(options.root)
+  const config = await readEffectiveConfig({ dataDir: options.configDir })
+  const result = await scanWorkspace(options.root, {
+    legacyRootScan: config.legacyRootScan,
+    rootAllowlist: config.rootAllowlist,
+  })
   const issues = collectIssues(result)
   const errors = issues.filter((issue) => issue.severity === 'error')
   const warnings = issues.filter((issue) => issue.severity === 'warning')
