@@ -29,7 +29,7 @@ export const Config = z.object({
   manageAgentsFile: z.boolean().default(true)
     .description('按工作区维护 AGENTS.md 中的工作区约定块；关闭后不创建、不更新。'),
   rootAllowlist: z.array(z.string()).default([])
-    .description('根目录允许长期存在的额外文件/目录名（大小写不敏感），用于放置不便移动的内容；不参与项目扫描。'),
+    .description('根目录允许长期存在的额外文件/目录名（大小写敏感），用于放置不便移动的内容；不参与项目扫描。'),
 })
 
 /**

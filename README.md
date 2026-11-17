@@ -32,9 +32,33 @@
 | `corePath` | `""` | 覆盖包内 core 路径；留空使用包内实现。 |
 | `indexFileName` | `"PROJECTS.md"` | 索引文件名。 |
 | `manageAgentsFile` | `true` | 按工作区维护 `AGENTS.md` 约定块；关闭后不创建、不更新。 |
-| `rootAllowlist` | `[]` | 根目录允许长期存在的额外文件/目录名（大小写不敏感），只影响散落判定，不参与项目扫描。 |
+| `rootAllowlist` | `[]` | 根目录允许长期存在的额外文件/目录名（大小写敏感），只影响散落判定，不参与项目扫描。 |
 
-`rootAllowlist` 用于「根目录里但暂时不便移动」的内容：命中的文件/目录不算散落项，不会进入索引警告，也不会触发 turn-stopping 重建；`projects/` 内的项目识别与扫描不受影响。条目会去空白、按大小写不敏感匹配。
+`rootAllowlist` 用于「根目录里但暂时不便移动」的内容：命中的文件/目录不算散落项，不会进入索引警告，也不会触发 turn-stopping 重建；`projects/` 内的项目识别与扫描不受影响。条目会去空白、按大小写敏感精确匹配。
+
+## 白名单位置与默认值
+
+1. 内置白名单只有 8 项：`PROJECTS.md`、`AGENTS.md`、`AGENTS.local.md`、`CLAUDE.md`、`projects`、`tools`、`.git`、`WORKFLOW.md`（最后一项仅兼容旧文件）。它们写在 [`core/root-policy.mjs`](core/root-policy.mjs)。
+2. 额外白名单是插件配置 `rootAllowlist`，位于 profile 的 `cordis.patch.yml`（`~/.dsh/profiles/<profile>/cordis.patch.yml`）中 `- id: workspace-guard` 的 `config` 下，或通过 Settings 的插件配置页修改。
+3. 仓库默认是空数组，不包含任何用户环境名；仓库的 `cordis.patch.yml` 不写 `rootAllowlist`。
+4. 配置示例：
+
+```yaml
+- insert:
+    - id: workspace-guard
+      name: 'dsh-workspace-normalizer'
+      config:
+        autoCreateReadme: false
+        maxSummaryBytes: 4000
+        legacyRootScan: true
+        rootAllowlist:
+          - archive
+          - astrbot-qq
+          - ollama
+          - .dsh
+```
+
+`archive`、`astrbot-qq`、`ollama`、`.dsh` 不在内置集合中；需要时按上面的示例加入，否则它们会被当作根目录散落项。
 
 ## 命令
 
@@ -107,7 +131,7 @@ node bin/check-projects.mjs --root <工作区> [--json]
 
 - 刚初始化时只有 `PROJECTS.md` 与空的 `projects/`；`archive/`、`artifacts/`、`scripts/` 等**用到才建**，不预建空目录。
 - 根目录只保留这些固定项。
-- 服务目录（如 `astrbot-qq/`、`ollama/`）不参与这套结构，插件不扫描它们。
+- 服务目录（如 `astrbot-qq/`、`ollama/`）不参与项目结构；如需长期保留在根目录，请加入 `rootAllowlist`。
 
 初始化后 `PROJECTS.md` 的内容（没有项目时没有表格）：
 
