@@ -21,6 +21,9 @@ const PROJECT_SLUG_RE = /^\d{8}-[a-z0-9]+(?:-[a-z0-9]+)*$/
 const PURE_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 /** 过渡期根目录遗留项目目录名。 */
 const LEGACY_SLUG_RE = /^\d{8}-[a-z0-9-]+$/
+
+/** 归档索引文件名：与 PROJECTS.md 同风格，避免与通用 done.md 冲突。 */
+export const DONE_INDEX_FILE = 'PROJECTS-DONE.md'
 const FIELD_MAP = new Map([
   ['目标', 'goal'],
   ['状态', 'status'],
@@ -178,7 +181,7 @@ export function renderProjectsIndex(result) {
   for (const warning of warnings) {
     pending.push({ path: warning.path === undefined ? '' : toPosix(warning.path), message: warning.message })
   }
-  const blocks = ['# 项目索引', '', '> 由 bin/workspace-index.mjs 生成，不要手改。', '']
+  const blocks = ['# 项目索引', '', '> 由 dsh-workspace-normalizer 自动生成，不要手改。', '']
   if (pending.length > 0) {
     blocks.push(`## 待处理（${pending.length}）`, '')
     for (const item of pending) blocks.push(item.path === '' ? `- ${item.message}` : `- \`${item.path}\` — ${item.message}`)
@@ -221,9 +224,15 @@ function truncateToBytes(text, limit) {
 }
 
 /** 生成注入摘要（11.4，≤ maxBytes）：先完整渲染，超限时从最后一个项目开始删除， */
-export function renderSummary(projects, maxBytes) {
+export function renderSummary(projects, maxBytes, extra = {}) {
   const limit = Number.isFinite(maxBytes) && maxBytes > 0 ? Math.floor(maxBytes) : 4000
   const list = Array.isArray(projects) ? projects : []
+  const currentProject = typeof extra?.currentProject === 'string' && extra.currentProject.trim() !== ''
+    ? extra.currentProject.trim()
+    : null
+  const strays = Array.isArray(extra?.strays)
+    ? extra.strays.filter((item) => typeof item === 'string' && item.trim() !== '').map((item) => item.trim())
+    : []
   const active = list.filter((record) => record.fields?.status !== 'done').sort(compareProjects)
   const counts = { active: 0, paused: 0, unknown: 0 }
   for (const record of active) {
@@ -250,12 +259,18 @@ export function renderSummary(projects, maxBytes) {
   const assemble = (kept, options = {}) => {
     const withFooter = options.withFooter !== false
     const lines = [header, '']
+    if (currentProject !== null) lines.push(`当前项目：${currentProject}`, '')
     if (options.withStat !== false) lines.push(statLine)
     lines.push(...itemLines.slice(0, kept))
     const omitted = itemLines.length - kept
     if (omitted > 0) lines.push(kept > 0 ? `- 还有 ${omitted} 个未列出` : `还有 ${omitted} 个未列出`)
+    if (strays.length > 0) {
+      const shown = strays.slice(0, 8).map((item) => `\`${item}\``).join('、')
+      const more = strays.length > 8 ? ` 等 ${strays.length} 项` : ''
+      lines.push('', `根目录有 ${strays.length} 个未归类条目：${shown}${more}；请移入项目目录或删除。`)
+    }
     if (issueLine !== '') lines.push('', issueLine)
-    else if (withFooter) lines.push('')
+    else if (withFooter && strays.length === 0) lines.push('')
     if (withFooter) lines.push(footer)
     return lines.join('\n')
   }
@@ -288,6 +303,33 @@ export function classifyPath(root, absPath, rootAllowlist) {
   if (first.startsWith('.') || isRootAllowed(first, rootAllowlist)) return { kind: 'ignored' }
   if (parts.length === 1) return LEGACY_SLUG_RE.test(first) ? { kind: 'legacy-root' } : { kind: 'root-file' }
   return LEGACY_SLUG_RE.test(first) ? { kind: 'legacy-root' } : { kind: 'ignored' }
+}
+
+/**
+ * 判定「新建文件」是否允许：只拦工作区根目录下的新建文件。
+ *
+ * 放行：工作区外、`projects/` 内、`tools/` 内、过渡期 `YYYYMMDD-*` 项目、根目录白名单项。
+ * 拦截：根目录下的普通新文件（kind 为 `root-file`）。
+ * 是否「已存在」由调用方判断——覆盖写已有文件永远放行。
+ *
+ * @param {string} root 工作区根
+ * @param {string} absPath 目标绝对路径
+ * @param {string[]|undefined} rootAllowlist 额外白名单
+ * @returns {{allow: boolean, kind: string}}
+ */
+export function classifyWriteTarget(root, absPath, rootAllowlist) {
+  const rel = path.relative(path.resolve(String(root ?? '')), path.resolve(String(absPath ?? '')))
+  if (rel === '' || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    return { allow: true, kind: 'outside' }
+  }
+  const parts = rel.split(/[\\/]+/).filter(Boolean)
+  const first = parts[0]
+  if (first === undefined) return { allow: true, kind: 'outside' }
+  if (first === 'projects') return { allow: true, kind: 'projects' }
+  if (first === 'tools') return { allow: true, kind: 'tools' }
+  if (first.startsWith('.') || isRootAllowed(first, rootAllowlist)) return { allow: true, kind: 'ignored' }
+  if (LEGACY_SLUG_RE.test(first)) return { allow: true, kind: 'legacy-root' }
+  return { allow: false, kind: 'root-file' }
 }
 
 /* ------------------------------ 路径与文件工具 ---------------------------- */
@@ -622,6 +664,93 @@ export async function writeIndex(root, content) {
 }
 
 /**
+ * 生成 `PROJECTS-DONE.md`：已归档项目的入口，只在全局检索时读取，不参与摘要注入。
+ * @param {{slug:string, date:string, goal:string, path:string}[]} entries
+ * @returns {string}
+ */
+export function renderDoneIndex(entries) {
+  const list = Array.isArray(entries) ? entries.slice() : []
+  list.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.slug).localeCompare(String(b.slug)))
+  const blocks = [
+    '# 已归档项目',
+    '',
+    '> 由 dsh-workspace-normalizer 自动生成，不要手改。只在全局检索时读取。',
+    '',
+  ]
+  if (list.length === 0) {
+    blocks.push('暂无归档项目。', '')
+  } else {
+    for (const entry of list) {
+      const goal = typeof entry.goal === 'string' && entry.goal !== '' ? entry.goal : '（无目标）'
+      blocks.push(`- \`${entry.path}/\` — ${goal}（归档于 ${entry.date}）`)
+    }
+    blocks.push('')
+  }
+  return `${blocks.join('\n').replace(/\n+$/, '')}\n`
+}
+
+/**
+ * 扫描 `archive/YYYY/<slug>/`，读取每个项目的目标字段。
+ * @param {string} root
+ * @returns {Promise<{slug:string, date:string, goal:string, path:string}[]>}
+ */
+export async function scanArchive(root) {
+  const rootReal = await existingRoot(root)
+  const archiveDir = path.join(rootReal, 'archive')
+  const entries = []
+  let years
+  try {
+    years = await fs.readdir(archiveDir, { withFileTypes: true })
+  } catch {
+    return entries
+  }
+  for (const year of years) {
+    if (!year.isDirectory() || !/^\d{4}$/.test(year.name)) continue
+    let projects
+    try {
+      projects = await fs.readdir(path.join(archiveDir, year.name), { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const project of projects) {
+      if (!project.isDirectory() || !LEGACY_SLUG_RE.test(project.name)) continue
+      const dir = path.join(archiveDir, year.name, project.name)
+      let goal = ''
+      try {
+        const text = await fs.readFile(path.join(dir, 'README.md'), 'utf8')
+        const record = parseReadme(text)
+        const value = record?.fields?.goal
+        goal = typeof value === 'string' && !isPlaceholder(value) ? value.replace(/\s*\r?\n\s*/g, ' ').trim() : ''
+      } catch {
+        // 缺 README 时留空，仍列入归档清单。
+      }
+      entries.push({
+        slug: project.name,
+        date: `${year.name}-${project.name.slice(4, 6)}-${project.name.slice(6, 8)}`,
+        goal,
+        path: `archive/${year.name}/${project.name}`,
+      })
+    }
+  }
+  return entries
+}
+
+/**
+ * 重建 root/PROJECTS-DONE.md。
+ * @param {string} root
+ * @returns {Promise<{path: string, bytes: number, entries: number}>}
+ */
+export async function writeDoneIndex(root) {
+  const rootReal = await existingRoot(root)
+  const entries = await scanArchive(rootReal)
+  const target = path.join(rootReal, DONE_INDEX_FILE)
+  await assertInsideRoot(rootReal, target)
+  const text = renderDoneIndex(entries)
+  await writeFileAtomic(target, text, { rootReal })
+  return { path: target, bytes: Buffer.byteLength(text, 'utf8'), entries: entries.length }
+}
+
+/**
  * 初始化工作区：确保 `projects/` 目录存在；`PROJECTS.md` 不存在时写入空索引。
  * 已存在的目录与文件不覆盖、不删除。用于全新工作区的首次建立。
  * @param {string} root 工作区根（必须已存在）
@@ -651,9 +780,37 @@ export function renderAgentsSection() {
     AGENTS_BEGIN,
     '## 工作区约定（由 dsh-workspace-normalizer 维护，请勿手改本块）',
     '',
-    '- 所有产出落在 `projects/<YYYYMMDD-slug>/` 下。',
-    '- 工作区根目录由 `AGENTS.md`、`PROJECTS.md`、`projects/`、`tools/`、`archive/` 与服务目录组成。',
-    '- 新文件放入对应项目的 `artifacts/`、`scripts/` 或 `tmp/`。',
+    '### 放到哪个项目',
+    '',
+    '按顺序判断，命中即停：',
+    '',
+    '1. 本次任务已经在 `projects/<slug>/` 下写过文件 → 它是当前项目。',
+    '2. 任务明确对应 `PROJECTS.md` 里的某个活跃项目 → 用它的目录。',
+    '3. 两者都没有 → 这是新项目：调用 `project_create` 建目录，建好再写文件。',
+    '4. 只是问答、不产生需要保留的文件 → 不建项目，直接回答。',
+    '',
+    '### 放到哪个子目录',
+    '',
+    '| 内容 | 目录 | 判定标准 |',
+    '|---|---|---|',
+    '| 最终成果、报告、构建产物 | `artifacts/` | 任务结束后仍要保留 |',
+    '| 改变结果、可重复执行的脚本 | `scripts/` | 下次还会跑 |',
+    '| 验证结果的测试 | `tests/` | 只验证、不改结果 |',
+    '| 与某次改动绑定的备份 | `backups/<日期>-<用途>/` | 需要回滚 |',
+    '| 过程文件、调试片段 | `tmp/` | 可再生成、跑完即弃 |',
+    '| 两个以上项目复用的工具 | `tools/` | 不属于任何单一项目 |',
+    '',
+    '### 目录不存在时',
+    '',
+    '用到再建，不预建空目录；用一次 `mkdir -p` 建到位，不要把父目录和子目录分两次建。',
+    '',
+    '### 命名',
+    '',
+    '项目目录固定为 `projects/YYYYMMDD-slug/`，日期取创建日；slug 用小写英文与连字符，创建后不改名。',
+    '',
+    '### 根目录',
+    '',
+    '根目录只允许 `AGENTS.md`、`PROJECTS.md`、`PROJECTS-DONE.md`、`projects/`、`tools/`、`archive/` 与 `rootAllowlist` 中的条目，以及服务目录。其他文件视为放错位置：新建会被拒绝，请先归入项目。',
     AGENTS_END,
   ].join('\n')
 }

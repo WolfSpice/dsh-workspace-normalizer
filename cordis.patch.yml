@@ -5,3 +5,7 @@
         autoCreateReadme: false
         maxSummaryBytes: 4000
         legacyRootScan: false
+        enforceRootWrites: true
+        interactiveInit: true
+        askTimeoutMs: 30000
+        maxDenyPerPath: 3

@@ -1,6 +1,6 @@
 {
   "name": "dsh-workspace-normalizer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "校验项目 README、重建项目索引并归档已完成项目，让工作区结构始终可检查。",
   "icon": "./icon.svg",
   "type": "module",

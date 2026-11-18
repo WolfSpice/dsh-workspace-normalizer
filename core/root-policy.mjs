@@ -9,7 +9,7 @@
 
 /** 内置白名单（工作区固定项）；`WORKFLOW.md` 仅为兼容旧文件保留，不构成依赖。 */
 export const ROOT_ALLOWED = new Set([
-  'PROJECTS.md', 'AGENTS.md', 'AGENTS.local.md', 'CLAUDE.md',
+  'PROJECTS.md', 'AGENTS.md', 'AGENTS.local.md', 'CLAUDE.md', 'PROJECTS-DONE.md',
   'projects', 'tools', 'archive', '.git', 'WORKFLOW.md',
 ])
 

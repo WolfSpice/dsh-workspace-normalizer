@@ -30,6 +30,14 @@ export const Config = z.object({
     .description('按工作区维护 AGENTS.md 中的工作区约定块；关闭后不创建、不更新。'),
   rootAllowlist: z.array(z.string()).default([])
     .description('根目录允许长期存在的额外文件/目录名（大小写敏感），用于放置不便移动的内容；不参与项目扫描。'),
+  enforceRootWrites: z.boolean().default(true)
+    .description('拦截「在工作区根目录新建文件」的写入，并提示先归入项目；只作用于 write 类工具，覆盖写已有文件不受影响。'),
+  interactiveInit: z.boolean().default(true)
+    .description('project_create 用选择题向用户确认项目归属；关闭后只能用 slug/goal 参数直接创建。'),
+  askTimeoutMs: z.number().min(5000).max(300000).default(30000)
+    .description('选择题等待用户回答的毫秒数，超时按取消处理。'),
+  maxDenyPerPath: z.number().min(1).max(10).default(3)
+    .description('同一路径连续被拒绝的次数上限，超过后放行一次，避免模型陷入重试循环。'),
 })
 
 /**
