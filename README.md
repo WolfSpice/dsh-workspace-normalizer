@@ -97,8 +97,6 @@ archive/YYYY/    # 已归档项目
 
 ## 常见问题
 
-**`npm publish` 报 403 `Two-factor authentication ... required`**：账号开了 2FA。要么用 granular access token 并勾选 *Bypass two-factor authentication*，要么用 TOTP 的 `--otp`。Windows Hello 这类安全密钥在命令行里没有 6 位码，只能走 token。
-
 **命令报「无法定位工作区」**：当前目录向上既没有 `PROJECTS.md`，也没有含 `YYYYMMDD-*` 项目的 `projects/`。先 `cd` 到工作区根，或执行 `/project-init-workspace`。
 
 **加了 `rootAllowlist` 还是被警告**：条目区分大小写且只去首尾空白；`archive`、`projects`、`tools` 等已在内置白名单里，不用重复配置。
